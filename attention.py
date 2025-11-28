@@ -1,3 +1,5 @@
+'''实现基本的注意力实现 + 自注意力 + 掩码自注意力'''
+
 # Scaled Dot-Product Attention缩放点积注意力实现
 import torch
 import math
@@ -23,3 +25,10 @@ def attention(query, key, value, dropout=None):
     # 使用p_attn对value进行加权求和
     # 并和p_attn作为一个元组返回
     return torch.matmul(p_attn, value), p_attn
+
+# 自注意力机制：
+# KQV都是同一个矩阵就欧克
+x = torch.tensor([[1, 2, 3], [4, 5, 6]]) #随意生成的矩阵x
+attention(x, x, x)
+
+# 掩码自注意力
