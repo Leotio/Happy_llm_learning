@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 '''多头自注意力模块'''
 class MultiHeadAttention(nn.Module):
     # ModelArgs集中管理构建模型所需的所有超参数
@@ -59,5 +60,47 @@ class MultiHeadAttention(nn.Module):
 
         # 计算真正的KQV,维度变换为(B, T, n_embed) x (n_embed, n_embed) -> (B, T, n_embed)
         xq, xk, xv = self.wq(q), self.wk(k), self.wv(v)
+
+        # 将KQV拆分为多头(B,T,n_head,C//n_head)
+        # view()不改变张量,只提供了新的视角（View）来看数据,但要求原始张量在内存中必须是连续存储
+        # 此处则是将最后一维拆解为了self.n_local_heads*self.head_dim
+        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        # 将张量从(B, L, h, d_k)转置到(B, h, L, d_k),可以实现GPU的最大并行化
+        xq = xq.transpose(1, 2)
+        xk = xk.transpose(1, 2)
+        xv = xv.transpose(1, 2)
+
+        # 注意力计算，Q@K_T(B, n_h, T, h_dim) x (B, n_h, h_dim, T) -> (B, n_h, T, T)
+        scores = torch.matmul(xq, xk.transpose(-1,-2)) / math.surt(self.head_dim)
+        
+        # 如果为掩码注意力，要在softmax前进行掩码操作、
+        if self.is_causal:
+            # hasattr（）检查对象是否有某个属性/方法
+            assert hasattr(self, 'mask')
+            scores = scores + self.mask[:, :, :seqlen, : :seqlen]
+
+        # softmax操作
+        scores = F.softmax(scores.float(), dim=-1).typeas(xq)
+        
+        # 第一次dropout操作
+        scores = self.attn_dropout(scores)
+
+        # scores与V相乘:(B, n_h, T, T) x (B, n_h, T, h_dim) -> (B, n_h, T, h_dim)
+        output = torch.matmul(scores, xv)
+
+        # output先把维度交换回去，再进行拼接操作，到正确的(B,L,d_k)
+        # 交换维度为 (B, T, n_head, C // n_head)，再拼接成 (B, T, n_head * C // n_head)
+        # contiguous 函数⽤于重新开辟⼀块新内存存储，因为Pytorch设置先transpose再view会报错，
+        # 因为view直接基于底层存储得到，然⽽transpose并不会改变底层存储，只改变访问的步长，因此需要额外存储
+        output = output.transpose(2, 3).contiguous().view(bsz, seqlen, -1)
+
+        # 和wo进行计算，汇总各个头的信息
+        output = self.wo(output)
+        # 进行第二次的dropout
+        output = self.resid_dropout(output)
+        return output
+
 
 
