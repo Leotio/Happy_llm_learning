@@ -1,6 +1,6 @@
 '''Encoder Layer -> Encoder'''
 
-import torch
+
 import torch.nn as nn
 '''Encoder Layer实现'''
 # 由一个注意力层和一个FFN构成
