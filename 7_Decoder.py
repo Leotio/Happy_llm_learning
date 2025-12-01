@@ -1,4 +1,10 @@
 '''Decoder Layer -> Decoder'''
+'''
+解码器的核心任是：
+    理解自己： 通过掩码自注意力,理解目前已生成的（或已输入的）目标序列的内部上下文。
+    理解源序列： 通过交叉注意力,将目标序列与编码器输出的源序列表示联系起来。
+    交叉注意力的计算,query是Decoder的第一部分掩码自注意力的输出,而Key和Value采用Encoder的输出
+'''
 
 import torch.nn as nn
 '''Decoder Layer实现'''
