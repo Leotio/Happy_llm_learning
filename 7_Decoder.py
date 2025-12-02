@@ -23,18 +23,41 @@ class DecoderLayer(nn.Module):
         self.attention = MultiHeadAttention(args, is_causal=False)
         self.ffn_norm = LayerNorm(args.n_embd)
 
-        # 第三部分为FFN
+        # 第三部分为FFN,具体为MLP
         self.feed_forward = MLP(args)
 
     # enc_out在第二部分的多头注意力里面，充当Key和Value，建立目标序列与源序列之间的关系
     def forward(self, x, enc_out):
         # 先进行层归一化
+        norm_x = self.attention_norm_1(x)
+
+        # 掩码自注意力求解
+        # happy llm给的代码是显式调用的forward方法
+        # 但实际上，可以写成mask_attention(norm_x, norm_x, norm_x)让其自动调用，更好
+        x = x + self.mask_attention.forward(norm_x, norm_x, norm_x)
+
+        # 多头注意力
+        norm_x = self.attention_norm_2(x)
+        h = x + self.attention.forward(norm_x, enc_out, enc_out)
+
+        # FFN
+        norm_x = self.ffn_norm(h)
+        out = h + self.feed_forward.forward(norm_x)
+
+        return out
 
 
 '''Decoder的实现:N个Decoder Layer+Layer Norm'''
 class Decoder(nn.Module):
     def __init__(self, args):
         super().__init__()
-    
-    def forward(self, x):
-        pass
+        # N个DecoderLayer构成一个Decoder
+        self.layers = nn.ModuleList([DecoderLayer(args) for _ in range(args.n_layer)])
+        self.norm = LayerNorm(args.embd)
+
+    def forward(self, x, enc_out):
+        for layer in self.layers:
+            # nn.Module魔术方法会将此处传入的参数直接传给forward函数
+            # 并调用forward函数进行计算更新
+            x = layer(x, enc_out)
+        return self.norm(x)
