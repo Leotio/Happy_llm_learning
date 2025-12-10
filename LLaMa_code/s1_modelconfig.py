@@ -3,13 +3,13 @@ from transformers import PretrainedConfig
 # 继承transformers库中的参数类PretrainedConfig
 class ModelConfig(PretrainedConfig):
     # model_type作为配置文件和模型实现类之间的桥梁和身份ID
-    '''AutoModel模型类的核心用途：
+    '''AutoModel模型类的核心用途:
     定义网络结构：模型类在其 __init__ 方法中实例化了所有的层、模块、权重、偏置等
     定义前向传播逻辑forward: 包含了如何将输入数据通过网络结构进行计算，最终输出结果的逻辑
     管理权重：模型类是存储和管理网络参数的地方。加载预训练模型时，权重就是加载到这个类的实例中。
     model_type 存在的目的，是让自定义配置能够集成到 Hugging Face 生态系统中，实现配置与模型实现的自动映射
     比如后续保存了模型重新加载的时候,如果要用到AutoModel，没有这个model_type的话就没有办法加载出来，所以这个
-    相当于是，便于Hugging Face生态下模型识别
+    相当于是,便于Hugging Face生态下模型识别
     '''
     # AutoModel实例化并加载权重到正确的结构中:依赖 model_type 来找到对应的模型类，然后将权重加载到这个类实例中。
     model_type = "Tiny-K"
