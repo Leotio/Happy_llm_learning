@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 from typing import Tuple
 from s1_modelconfig import ModelConfig
+import math
+import torch.nn.functional as F
 
 '''扩展K和V的维度到Q的维度'''
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -95,7 +97,8 @@ def apply_rotary_emb(
 
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
-'''测试代码'''
+
+'''RoPE测试代码'''
 xq = torch.randn(1, 50, 6, 48) # bs, seq_len, dim//n_head, n_head_dim
 xk = torch.randn(1, 50, 6, 48) # bs, seq_len, dim//n_head, n_head_dim
 # 使⽤ precompute_freqs_cis 函数获取 sin和cos
@@ -104,7 +107,126 @@ print(cos.shape, sin.shape)
 xq_out, xk_out = apply_rotary_emb(xq, xk, cos, sin)
 print(xq_out.shape, xk_out.shape)
 
+
 '''构建LLaMA2 Attention模块'''
 class Attention(nn.Module):
     def __init__(self, args: ModelConfig):
         super().__init__()
+        # 根据是否指定了K、V头数来确定key和value头
+        self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
+        # 确保总头数可以被键值头数整除
+        assert args.n_heads % self.n_kv_heads == 0
+        # 模型并行处理大小，默认为1
+        model_parallel_size = 1
+        # 本地计算头数，等于总头数除以模型并⾏处理⼤⼩
+        self.n_local_heads = args.n_heads // model_parallel_size
+        # 本地键值头数，等于键值头数除以模型并⾏处理⼤⼩
+        self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
+        # 重复次数，⽤于扩展键和值的尺⼨
+        self.n_rep = self.n_local_heads // self.n_local_kv_heads
+        # 每个头的维度，等于模型维度除以头的总数
+        self.head_dim = args.dim // args.n_heads
+
+        # 定义权重矩阵
+        self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
+        self.wk = nn.Linear(args.dim, args.n_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(args.dim, args.n_kv_heads * self.head_dim, bias=False)
+        # 输出权重矩阵
+        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
+
+        # 定义dropout
+        self.attn_dropout = nn.Dropout(args.dropout)
+        self.resid_dropout = nn.Dropout(args.dropout)
+        # 保存dropout概率
+        self.dropout = args.dropout
+
+        # 检查是否使用Flash Attention
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+        if not self.flash:
+            # 不支持Flash Attention时，使用手动实现注意力机制，并设置mask
+            # Flash Attention提供了快捷、高效、内建Mask的路径；没有则必须走手动、低效的路径，并需要手动创建和应用因果Mask
+            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
+            # 创建上三角mask
+            mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+            mask = torch.triu(mask, diagonal=1)
+            # 注册为模型的缓冲区
+            self.register_buffer("mask", mask)
+    def forward(self, x: torch.Tensor, freq_cos: torch.Tensor, freq_sin: torch.Tensor):
+        # 获取batchsize和序列长度
+        # 初始输入的x维度应该是（batchsize，seqlen，dim）
+        bsz, seqlen, _ = x.shape
+
+        # 计算Q，K，V
+        # xq为(bsz, seqlen, n_heads * head_dim)
+        # xk为(bsz, seqlen, n_kv_heads * head_dim)
+        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        # 调整形状适应头的维度
+        # view操作将最后一个维度拆解为两个更小的维度
+        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+
+        # 应用旋转位置嵌入
+        xq, xk = apply_rotary_emb(xq, xk, freq_cos, freq_sin)
+
+        # 对k和v头进行repeat来符合q头
+        xk = repeat_kv(xk, self.n_rep)
+        xv = repeat_kv(xv, self.n_rep)
+
+        # 将头作为超级批次处理
+        # (B,S,H,d_h)->(B,H,S,d_h)
+        xq = xq.transpose(1,2)
+        xk = xk.transpose(1,2)
+        xv = xv.transpose(1,2)
+
+        # 根据是否支持Flash Attention来实现注意力计算
+        if self.flash:
+            # 使用Flash Attention
+            output = torch.nn.functional.scaled_dot_product_attention(xq, xk, xv,
+                attn_mask=None, # 注意力掩码,通常将其设置为None,如果需要应用非因果或自定义Mask才设置为True
+                # 训练时,使用 self.dropout 设定的概率;推理时,使用 0.0,即关闭Dropout
+                # 该参数控制在 Softmax 之后、与 $V$ 相乘之前，应用于注意力得分矩阵的 Dropout 概率。
+                dropout_p=self.dropout if self.training else 0.0, 
+                is_causal=True,
+            )
+        else:
+            # 手动实现注意力机制
+            # 注意力是在每个独立的头Head内部计算的，所以使用的放缩的维度是self.head_dim
+            scores = torch.matmul(xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim)
+            # self 对象是否拥有名为 'mask' 的属性
+            assert hasattr(self, 'mask')
+            scores = scores + self.mask[:, :, :seqlen, :seqlen]
+            scores = F.softmax(scores.float(), dim=-1).type_as(xq)
+            scores = self.attn_dropout(scores)
+            output = torch.matmul(scores, xv)
+
+       
+        # transpose:(bsz,N_heads,seqlen,d_h)->(bsz,seqlen,N_heads,d_h)把之前为了合成超级batch进行的tranpose换回来
+        # contiguous()强制 PyTorch 在内存中重新排列张量，使其恢复连续存储
+        # view()操作要求张量内存必须是连续的,在执行view之前调用contiguous()是常见的
+        #  将(N_heads,d_h)两个维度合并成总的特征维度
+        output = output.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
+
+        # 经过w0投影进行特征混合一下
+        output = self.wo(output)
+        # 注意力输出与残差连接相加之前，应用 Dropout 进行正则化
+        output = self.resid_dropout(output)
+
+        # output代表了经过注意力机制处理后，每个 Token 包含的最新、最丰富的上下文信息
+        return output
+
+'''Attention测试代码'''
+# 创建Attention实例
+attention_model = Attention(args)
+# 模拟输⼊数据
+batch_size = 1
+seq_len = 50 # 假设实际使⽤的序列⻓度为50
+dim = args.dim
+x = torch.rand(batch_size, seq_len, dim) # 随机⽣成输⼊张量
+# freqs_cos = torch.rand(seq_len, dim // 2) # 模拟cos频率，⽤于RoPE
+# freqs_sin = torch.rand(seq_len, dim // 2) # 模拟sin频率，⽤于RoPE
+freqs_cos, freqs_sin = precompute_freqs_cis(dim//args.n_heads, seq_len)
+# 运⾏Attention模型
+output = attention_model(x, freqs_cos, freqs_sin)
+# attention出来之后的形状 依然是[batch_size, seq_len, dim]
+print("Output shape:", output.shape)

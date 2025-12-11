@@ -2,7 +2,10 @@
 
 import torch.nn as nn
 import torch
-import PositionalEncoding, Decoder, Encoder
+from s9_position_encoding import PositionalEncoding
+from s6_Encoder import Encoder
+from s7_Decoder import Decoder
+import torch.nn.functional as F
 
 class Transformer(nn.Module):
     def __init__(self, args):

@@ -5,7 +5,9 @@
     理解源序列： 通过交叉注意力,将目标序列与编码器输出的源序列表示联系起来。
     交叉注意力的计算,query是Decoder的第一部分掩码自注意力的输出,而Key和Value采用Encoder的输出
 '''
-
+from s4_layer_norm import LayerNorm
+from s3_ffn import MLP
+from s2_multi_head_attention import MultiHeadAttention
 import torch.nn as nn
 '''Decoder Layer实现'''
 # 由两个注意力层：1.mask_self_attention 2.multihead_attention和一个FFN构成

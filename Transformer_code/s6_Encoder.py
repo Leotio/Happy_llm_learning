@@ -1,5 +1,7 @@
 '''Encoder Layer -> Encoder'''
-
+from s4_layer_norm import LayerNorm
+from s3_ffn import MLP
+from s2_multi_head_attention import MultiHeadAttention
 
 import torch.nn as nn
 '''Encoder Layer实现'''
