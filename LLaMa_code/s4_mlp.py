@@ -2,7 +2,6 @@
 
 import torch.nn as nn
 import torch.nn.functional as F
-from s1_modelconfig import ModelConfig
 
 class MLP(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, multiple_of: int, dropout: float):
