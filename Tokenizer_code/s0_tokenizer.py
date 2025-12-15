@@ -48,7 +48,7 @@ def read_texts_from_jsonl(file_path: str) -> Generator[str, None, None]:
                 continue
 
 '''创建配置文件'''
-def create_tokrnizer_config(save_dir: str) -> None:
+def create_tokenizer_config(save_dir: str) -> None:
     config = {
         # 控制 Tokenizer在编码时是否自动在序列开头和结尾添加这些标记
         # 此处设为 False，意味着由chat_template来控制添加特殊标记
@@ -112,12 +112,16 @@ def create_tokrnizer_config(save_dir: str) -> None:
 
 '''训练BPE Tokenizer'''
 # 定义一个训练函数，用于训练Tokenizer并保存训练好的Tokenizer文件
+
 # 此处使用tokenizers库中的Tokenizer类来实现
 def train_tokenizer(data_path: str, save_dir: str, vocab_size: int = 8129) -> None:
     os.makedirs(save_dir, exist_ok=True)
 
+    # -----初始化tokenizer-----
+
     # 指定Tokenizer的核心算法模型为Byte-Pair Encoding (BPE)
-    # unk_token="<unk>"：在分词过程中，如果遇到一个在词汇表中不存在的词，用<unk>标记替换
+    # unk_token="<unk>"：在分词过程中，如果遇到一个在词汇表中不存在的词，用<unk>标记替换;
+    # 这样子更安全，虽然字节级别的编码很少出现不存在的
     tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
 
     # 定义在分词之前对输入文本进行标准化的规则 NFKC()，
@@ -132,7 +136,8 @@ def train_tokenizer(data_path: str, save_dir: str, vocab_size: int = 8129) -> No
     # 分词之后，采用与预分词器对应的字节级别解码将Token ID序列转换回可读字符串（即 解码）
     tokenizer.decoder = decoders.ByteLevel()
 
-    # 特殊配置token，确保不会被BPE算法分解，并在最终的词汇表中拥有独立的、唯一的Token ID
+    # -----特殊配置token-----
+    # 确保不会被BPE算法分解，并在最终的词汇表中拥有独立的、唯一的Token ID
     special_tokens = [
         "<unk>", 
         "<s>", 
@@ -142,23 +147,72 @@ def train_tokenizer(data_path: str, save_dir: str, vocab_size: int = 8129) -> No
     ]
 
 
-    # 配置训练器
+    # -----配置训练器-----
+
     trainer = trainers.BpeTrainer(
         vocab_size=vocab_size,
         special_tokens = special_tokens,
+        # 当一个子词对（或基础 Token）在训练语料中出现的次数大于或等于2时，才会被考虑加入到最终的词汇表中
+        # 子词对：Token "l" 和 "o" 经常相邻出现，BPE 就会创建一个新的子词 Token "lo"
         min_frequency=2,
+        # 进度显示，在训练过程中，终端会打印出进度条或其他反馈信息
         show_progress=True,
+        # 初始字母表：确保BPE算法从所有256个字节（ByteLevel预分词器定义的全部字符集）作为初始单元开始训练
         initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
     )
 
-    
-    # 训练tokenizer
+
+    # -----训练tokenizer-----
+
+    print(f"Training tokenizer with data from {data_path}")
+    # 用之前定义的read_texts_from_jsonl返回一个可迭代对象texts，包含所有待用于训练的文本字符串
+    texts = read_texts_from_jsonl(data_path)
+
+    # train_from_iterator设计为从一个迭代器中流式读取数据
+    # trainer：预配置的BpeTrainer对象，指定训练过程中使用的规则和约束，
+    #  length：数据文件的大小
+    tokenizer.train_from_iterator(texts, trainer=trainer, length=os.path.getsize(data_path))
+
+    # -----验证特殊token映射-----
+    # special_tokens参数将这些标记保留，Tokenizers会分配最小、固定的I。
+    # 代码用于强制确认这些 ID 分配与模型训练时的预期完全一致（按照special_tokens定义的时候的顺序分配ID）
+    try:
+        assert tokenizer.token_to_id("<unk>") == 0
+        assert tokenizer.token_to_id("<s>") == 1
+        assert tokenizer.token_to_id("</s>") == 2
+        assert tokenizer.token_to_id("<|im_start|>") == 3
+        assert tokenizer.token_to_id("<|im_end|>") == 4
+    except AssertionError as e:
+        print("Special tokens mapping error:", e)
+        raise
+
+    # -----保存tokenizer文件-----
+
+    # 将Tokenizer对象序列化并保存到文件的核心方法,tokenizer.json是保存Tokenizer所有训练结果的标准文件名
+    # 它包含了 Tokenizer 的全部核心信息：模型/词汇表/规则配置
+   
+    tokenizer.save(os.path.join(save_dir, "tokenizer.json"))
+
+    # -----创建配置文件-----
+
+    # 自定义的函数,创建tokenizer_config.json辅助配置文件
+    # 包含了 Hugging Face Transformers 库加载 Tokenizer 时所需的所有元数据和特殊标记映射
+    # 告诉 Transformers 库用这个类，以这些特殊标记和配置来加载 tokenizer.json 文件
+    create_tokenizer_config(save_dir)
+    print(f"Tokenizer saved to {save_dir}")
 
 
-    # 验证特殊token映射
+    # "tokenizer.json"包含所有底层数据和逻辑,它的特点是大且固定
+    # "tokenizer_config.json"包含高级 API 需要知道的所有配置和元数据,它的特点是小且可变
 
-    # 保存tokenizer文件
-
-    # 创建配置文件
 
 '''使用训练好的Tokenizer'''
+def eval_tokenizer(tokenizer_path: str) -> None:
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    except Exception as e:
+        print(f"Error loading tokenizer: {e}")
+        return
+    
+    # 测试基本属性
+    
