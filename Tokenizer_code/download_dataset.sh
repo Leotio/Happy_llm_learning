@@ -22,7 +22,7 @@ huggingface-cli download `
 set HF_ENDPOINT=https://hf-mirror.com
 
 # 将\path\to\your\dataset替换成想要下载dataset目录地址
-set dataset_dir=\path\to\your\dataset
+set dataset_dir=E:\\github\\Transformer_code\\Tokenizer_code\\dataset
 
 modelscope download --dataset ddzhu123/seq-monkey mobvoi_seq_monkey_general_open_corpus.jsonl.tar.bz2 --local_dir %dataset_dir%
 

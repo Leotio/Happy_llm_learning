@@ -170,7 +170,7 @@ def train_tokenizer(data_path: str, save_dir: str, vocab_size: int = 8129) -> No
 
     # train_from_iterator设计为从一个迭代器中流式读取数据
     # trainer：预配置的BpeTrainer对象，指定训练过程中使用的规则和约束，
-    #  length：数据文件的大小
+    # length：数据文件的大小
     tokenizer.train_from_iterator(texts, trainer=trainer, length=os.path.getsize(data_path))
 
     # -----验证特殊token映射-----
@@ -209,10 +209,58 @@ def train_tokenizer(data_path: str, save_dir: str, vocab_size: int = 8129) -> No
 '''使用训练好的Tokenizer'''
 def eval_tokenizer(tokenizer_path: str) -> None:
     try:
+        # AutoTokenizer 工作原理：
+        # 首先查看 tokenizer_path 目录下的 tokenizer_config.json 文件
+        # 读取 tokenizer_config.json中的 "tokenizer_class" 字段，这里是"tokenizer_class": "PreTrainedTokenizerFast"
+        # 根据读取到的类名，实例化相应的 Tokenizer类
+        # 使用该实例去解析目录下的 tokenizer.json 文件，读取词汇表、BPE 合并规则、以及所有预处理器和解码器配置，从而重建出训练好的 Tokenizer 对象
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     except Exception as e:
         print(f"Error loading tokenizer: {e}")
         return
     
     # 测试基本属性
-    
+    print("\n=== Tokenizer基本信息 ===")
+    # 打印 Tokenizer 词汇表大小
+    print(f"Vocab size: {len(tokenizer)}")
+    # 打印所有特殊标记字符串
+    print(f"Special tokens: {tokenizer.all_special_tokens}")
+    # 打印所有特殊标记字符串ID
+    print(f"Special token IDs: {tokenizer.all_special_ids}")
+
+    # 测试聊天模板
+    # 每个字典代表一轮发言，包含role和实content，模型需要将这个列表转换为一个单一的、连续的文本字符串
+    # 通常使用特殊的标记（如 <|im_start|> 和 <|im_end|>）来分隔不同的角色和发言
+    messages = [
+        {"role": "system", "content": "你是⼀个AI助⼿。"},
+        {"role": "user", "content": "How are you?"},
+        {"role": "assistant", "content": "I'm fine, thank you. and you?"},
+        {"role": "user", "content": "I'm good too."},
+        {"role": "assistant", "content": "That's great to hear!"},
+    ]
+
+    print("\n=== 聊天模板测试 ===")
+    prompt = tokenizer.apply_chat_template(
+        messages, 
+        # 告诉函数不要返回Token ID列表，返回最终格式化的文本字符串
+        tokenize=False, 
+    )
+    print("Generated prompt:\n", prompt, sep="")
+
+    # 测试编码解码
+    print("\n=== 编码解码测试 ===")
+    # 正确的编码器：能够将所有字符和子词正确地映射到其对应的 ID，没有遗漏或错误
+    encoded = tokenizer(prompt, truncation=True, max_length=256)
+    # 正确的解码器：能够将 ID 序列完美地还原为原始字节和字符
+    decoded = tokenizer.decode(encoded["input_ids"], skip_special_tokens=False)
+    print("Decoded text matches original:", decoded == prompt)
+
+    # 测试特殊token处理
+    print("\n=== 特殊token处理 ===")
+    test_text = "<|im_start|>user\nHello<|im_end|>"
+    # 比较解码后的文本 (decoded) 是否与原始输入文本 (test_text) 完全一致
+    encoded = tokenizer(test_text).input_ids
+    decoded = tokenizer.decode(encoded)
+    print(f"Original: {test_text}")
+    print(f"Decoded: {decoded}")
+    print("Special tokens preserved:", decoded == test_text)
