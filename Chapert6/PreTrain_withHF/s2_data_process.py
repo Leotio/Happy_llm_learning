@@ -68,7 +68,9 @@ def group_texts(examples):
     }
 
     # CLM 任务，labels 和 input 是相同的
-    result["labels"] = result["input_ids"].copy()
+    # 在CLM训练中，CLM 任务的目标是预测下一个词,为了让模型知道它预测得对不对，我们需要给它一份“标准答案”（Labels）
+    # 而在预测下一个词的任务中，标准答案其实就是文本本身
+    result["labels"] = result["input_ids"].copy() # .copy() 确保 labels 是一份独立的副本
     return result
 
 # 批量处理
@@ -78,7 +80,10 @@ lm_datasets = tokenized_datasets.map(
     num_proc=10,
     load_from_cache_file=True,
     desc=f"Grouping texts in chunks of {block_size}",
+    # datasets库会从磁盘一次性读取40000条记录，并将它们打包成一个字典传给 group_texts
     batch_size = 40000,
 )
 
+# lm_datasets 通常是一个 DatasetDict 对象,里面装有 train、test和 validation
+# train_dataset 就是⼀个可直接⽤于 CLM Pretrain 的预训练数据集了，每个样本⻓度为2048个token
 train_dataset = lm_datasets["train"]
