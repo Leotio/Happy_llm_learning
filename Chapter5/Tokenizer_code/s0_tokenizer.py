@@ -264,3 +264,19 @@ def eval_tokenizer(tokenizer_path: str) -> None:
     print(f"Original: {test_text}")
     print(f"Decoded: {decoded}")
     print("Special tokens preserved:", decoded == test_text)
+
+def main():
+    # 配置路径
+    data_path = "your data path"
+    save_dir = "E:\\github\\Transformer_code\\Tokenizer_code"
+    # 训练tokenizer
+    train_tokenizer(
+        data_path=data_path,
+        save_dir=save_dir,
+        vocab_size=6144
+    )
+    # 评估tokenizer
+    eval_tokenizer(save_dir)
+
+if __name__ == '__main__':
+    main()
