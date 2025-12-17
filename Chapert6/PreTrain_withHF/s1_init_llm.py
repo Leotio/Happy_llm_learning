@@ -1,10 +1,11 @@
 '''初始化LLM'''
 
-import os
-# 设置环境变量，此处使⽤ HuggingFace 镜像⽹站
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-# 下载模型
-os.system('huggingface-cli download --resume-download Qwen/Qwen2.5-1.5B --local-dir E:\github\Happy_llm_learning\Chapert6')
+# import os
+# # 设置环境变量，此处使⽤ HuggingFace 镜像⽹站
+# os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+# # 下载模型
+# os.system('huggingface-cli download --resume-download Qwen/Qwen2.5-1.5B --local-dir E:\github\Happy_llm_learning\Chapert6')
+
 
 """
 下面两段代码得到的都是没有经过预训练的模型，而⼀般情况下，很少从零初始化 LLM 进⾏预训练，
@@ -18,13 +19,13 @@ from transformers import AutoConfig
 # 下载参数的本地路径
 model_path = "E:\github\Happy_llm_learning\models"
 # 从本地路径读取 config.json 文件,它只加载了模型的超参数
-config = AutoConfig.from_pretrained(model_path)
+# config = AutoConfig.from_pretrained(model_path)
 
 
 '''使⽤该配置⽣成⼀个定义好的模型,但它内部的权重是随机生成的数字,无法回答问题.通常用于从零开始训练'''
 # 导入用于因果语言模型的类
-from transformers import AutoModelForCausalLM
-model = AutoModelForCausalLM.from_config(config,trust_remote_code=True)
+# from transformers import AutoModelForCausalLM
+# model = AutoModelForCausalLM.from_config(config,trust_remote_code=True)
 
 
 """
