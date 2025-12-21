@@ -9,6 +9,11 @@ from openai import OpenAI
 
 from dotenv import load_dotenv, find_dotenv
 
+
+# find_dotenv(): 自动在当前的文件夹（以及父级文件夹）中寻找名为 .env 的文件，并返回它的完整路
+# load_dotenv(...): 读取 .env 文件里的内容（比如 OPENAI_API_KEY=sk-xxxx），并把它们变成系统的环境变量
+
+# _: _ 是一个惯例，表示运行这个函数，但并不关心它返回的具体结果
 _ = load_dotenv(find_dotenv())
 
 
@@ -72,10 +77,15 @@ class BaseEmbeddings:
 class OpenAIEmbedding(BaseEmbeddings):
 
     def __init__(self, path: str = '', is_api: bool = True) -> None:
+        # super().__init__：调用父类（基类）的初始化方法
+        # 把 path 和 is_api 传给父类，完成基础属性的赋值
         super().__init__(path, is_api)
+
+        '''连接程序与云端大模型服务的桥梁'''
         if self.is_api:
+            # 实例化 OpenAI 客户端对象
             self.client = OpenAI()
-            # 从环境变量中获取 硅基流动 密钥
+            # 从操作系统的“环境变量”中读取OPENAI_API_KEY的值，并把它设为客户端的密钥
             self.client.api_key = os.getenv("OPENAI_API_KEY")
             # 从环境变量中获取 硅基流动 的基础URL
             self.client.base_url = os.getenv("OPENAI_BASE_URL")
@@ -85,7 +95,17 @@ class OpenAIEmbedding(BaseEmbeddings):
         此处默认使用轨迹流动的免费嵌入模型 BAAI/bge-m3
         """
         if self.is_api:
+            # 文本清洗：将换行符替换为空格
+            # 因为有些 Embedding 模型对换行符敏感，去掉换行符通常能获得更稳定的向量
             text = text.replace("\n", " ")
+
+            # 调用 SDK 接口：
+            # 1. input=[text]：把文本送进去
+            # 2. model=model：指定使用的模型
+            # 3. .data[0].embedding：从返回的复杂 JSON 结果中层层提取，只拿取最终的 float 列表（向量）
             return self.client.embeddings.create(input=[text], model=model).data[0].embedding
+       
         else:
+            # 如果 is_api 为 False，说明用户想用本地模型
+            # 但当前类还没写本地模型的加载逻辑，所以抛出错误
             raise NotImplementedError
