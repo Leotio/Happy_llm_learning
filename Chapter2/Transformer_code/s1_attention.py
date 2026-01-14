@@ -15,7 +15,7 @@ def attention(query, key, value, dropout=None):
     d_k = query.size(-1)
     # 计算Q与K的内积并除根号d_k
     # 根号d_k：防止点积结果过大，导致后续 Softmax 函数的梯度变得极小（进入梯度饱和区）
-    # trasnpose(-2,-1)将key矩阵的倒数第二个维度、倒数第一个维度交换
+    # transpose(-2,-1)将key矩阵的倒数第二个维度、倒数第一个维度交换
     scores = torch.matmul(query, key.transpose(-2,-1)) / math.sqrt(d_k)
     # Softmax操作（p_attn:probability attention）
     # softmax操作要在scores的最后一个维度上进行，

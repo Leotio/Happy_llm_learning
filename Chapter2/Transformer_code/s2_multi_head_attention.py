@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import math
+import torch.functional as F
+
 '''多头自注意力模块'''
 class MultiHeadAttention(nn.Module):
     # ModelArgs集中管理构建模型所需的所有超参数
