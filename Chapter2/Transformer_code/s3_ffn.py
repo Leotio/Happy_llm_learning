@@ -6,6 +6,8 @@
 # FFN 通过其内部的 ReLU 或 GeLU 激活函数引入非线性
 import torch
 import torch.nn as nn
+import torch.functional as F
+
 class MLP(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, dropout: float):
         super().__init__()
