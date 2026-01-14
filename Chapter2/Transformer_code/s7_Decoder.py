@@ -12,7 +12,7 @@ import torch.nn as nn
 '''Decoder Layer实现'''
 # 由两个注意力层：1.mask_self_attention 2.multihead_attention和一个FFN构成
 class DecoderLayer(nn.Module):
-    def __init__(self. args):
+    def __init__(self, args):
         super().__init__()
         # 每层有三个LayerNorm，一个在掩码注意力分数之前，一个在多头注意力之前，一个在FFN之前
         self.attention_norm_1 = LayerNorm(args.n_embd)
