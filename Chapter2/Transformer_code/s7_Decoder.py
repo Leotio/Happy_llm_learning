@@ -30,7 +30,7 @@ class DecoderLayer(nn.Module):
 
     # enc_out在第二部分的多头注意力里面，充当Key和Value，建立目标序列与源序列之间的关系
     def forward(self, x, enc_out):
-        # 先进行层归一化
+        # 先进行层归一化pre_norm
         norm_x = self.attention_norm_1(x)
 
         # 掩码自注意力求解
