@@ -19,6 +19,6 @@ class MLP(nn.Module):
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, x):
-        # 首先经过第一个线性层和RELU激活函数
+        # 首先经过第一个线性层和ReLU激活函数
         # 再经过第二个线性层和dropout
         return self.dropout(self.w2(F.relu(self.w1(x))))

@@ -18,7 +18,7 @@ class EncoderLayer(nn.Module):
         self.feed_forward = MLP(args)
     
     def forward(self, x):
-        # 计算atention前先进行一次曾归一化
+        # 计算atention前先进行一次层归一化
         norm_x = self.attention_norm(x)
         # 计算注意力分数,encoder计算自注意力
         h = x + self.attention.forward(norm_x, norm_x, norm_x)
