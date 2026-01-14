@@ -35,12 +35,13 @@ class MultiHeadAttention(nn.Module):
         # 所有注意力头拼接起来，与wo相乘
         # wo的维度:输入是上面层的输出，所以input维度应该是args.n_local_head * self.head_dim
         # wo此处的输出必须是原始模型维度，也就是args.dim
+
         self.wo = nn.Linear(args.n_local_head * self.head_dim, args.dim, bias=False)
 
         # dropout必须使用 nn.Dropout实现，即使他是不可学习的参数
-        # 但nn.Dropout 继承自 nn.Module，它自动获得了两个关键方法：
-        # model.train()：nn.Dropout 会进入训练模式，执行随机丢弃。
-        # model.eval()：nn.Dropout 会进入评估模式，不执行丢弃。
+        # 因为只有当nn.Dropout 继承自 nn.Module时才能获得两个关键方法：
+            # model.train()：nn.Dropout 会进入训练模式，执行随机丢弃。
+            # model.eval()：nn.Dropout 会进入评估模式，不执行丢弃。
         # 注意力的dropout
         # Softmax激活之后，与V矩阵相乘之前的输出之后
         self.attn_dropout = nn.Dropout(args.dropout)
@@ -75,7 +76,7 @@ class MultiHeadAttention(nn.Module):
         xv = xv.transpose(1, 2)
 
         # 注意力计算，Q@K_T(B, n_h, T, h_dim) x (B, n_h, h_dim, T) -> (B, n_h, T, T)
-        scores = torch.matmul(xq, xk.transpose(-1,-2)) / math.surt(self.head_dim)
+        scores = torch.matmul(xq, xk.transpose(-1,-2)) / math.sqrt(self.head_dim)
         
         # 如果为掩码注意力，要在softmax前进行掩码操作、
         if self.is_causal:
@@ -103,6 +104,3 @@ class MultiHeadAttention(nn.Module):
         # 进行第二次的dropout
         output = self.resid_dropout(output)
         return output
-
-
-
