@@ -15,13 +15,13 @@ class Transformer(nn.Module):
         # 它定义的不是模型能够看到的所有词汇，而是它被训练来识别和生成的最大、最关键的词元集合,所以也是一个固定的值
         assert args.vocab_size is not None
         # block_size：模型单次能处理的词元数量 
-        # 他是embedding层训练的权重矩阵的列，注意block size是单词可以处理的Token的数量，也经常取512
+        # 他是embedding层训练的权重矩阵的列，注意block size是单次可以处理的Token的数量，也经常取512
         # 但是并不是d_model，d_model是对于单个token的表示的维度，只不过也经常会出现512的设定
         assert args.block_size is not None
 
         self.args = args
         
-        # 这里用ModuleDict的话比ModuleList更方便通key来访问子模块
+        # 这里用ModuleDict的话比ModuleList更方便通过key来访问子模块
         # 把所有核心组件在此处定义
         self.transformer = nn.ModuleDict(dict(
             # word token embedding：首先进行词嵌入
@@ -61,7 +61,8 @@ class Transformer(nn.Module):
     def get_num_params(self, non_embedding=False):
         # parameters():nn.Module 的内置方法，返回一个迭代器，包含模型（self）中所有可训练的参数（权重和偏置）张量。
         # p.numel(): 对于迭代器返回的每个p，numel()方法返回该张量中元素的总数
-        # 即该参数占用的内存单元数量，这里的 “内存单元数量” 是对 numel() 结果的一个更物理层面或计算机科学层面的描述，因为每个元素（例如一个 32 位浮点数）确实占据了内存中的一个单元。）
+        # 即该参数占用的内存单元数量，这里的 “内存单元数量” 是对 numel() 结果的一个更物理层面或计算机科学层面的描述，
+        # 因为每个元素（例如一个 32 位浮点数）确实占据了内存中的一个单元。
         n_params = sum(p.numel() for p in self.parameters())
 
         if non_embedding:
@@ -119,7 +120,7 @@ class Transformer(nn.Module):
 
         # 此时x为(batch_size, sequence_len,d_model)
 
-        # 训练阶段
+        # 训练阶段(target就是训练时用于对照的标准答案)
         if targets is not None:
             # 训练需要计算loss
             # 首先通过最后的线性层->(batch_size,sequence_len,vocab_size)
@@ -127,7 +128,7 @@ class Transformer(nn.Module):
             # 再和targets计算交叉熵
             '''
             logits.view(-1, logits.size(-1)):
-                logits 的原始形状: (B, T, V),logits.size(-1): 获取 Logits 的最后一个维度的大小词汇表大小
+                logits 的原始形状: (B, T, V); logits.size(-1)获取 Logits 的最后一个维度的大小词汇表大小
                 .view(-1, V) 将张量重塑为一个二维矩阵
                 第一个参数-1自动计算所需的第一维度大小;第二个参数确保了第二维度是词汇表大小
                 每一行是模型对下一个词元的V种可能性的预测分数。
