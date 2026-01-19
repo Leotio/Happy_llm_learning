@@ -24,12 +24,12 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 '''旋转嵌入Rotary Position Embeddings, RoPE'''
 
 # 获得旋转嵌入的实部和虚部
-def precompute_freqs_cis(dim: int,end: int, theta: float = 10000.0):
-    # freqs(θ_i) = 10000 ^ (-2i/d) = (1/10000) ^ (2i/d)  i是维度分组索引
+def precompute_freqs_cis(dim: int,end: int, theta: float = 10000.0):# end为序列长度
+    # freqs也就是θ_i， 为10000 ^ (-2i/d) = (1/10000) ^ (2i/d)  i是维度分组索引
     # torch.arange(0,dim,2):从0开始，到dim，步长为2
     # [:(dim//2)]确保生成的序列的长度为dim的一半
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
-    # 从0开始到end的序列
+    # t为从0开始到end的序列（公式里面的m）
     t = torch.arange(end, device=freqs.device)
     # 计算外积,得到m*θ_i
     freqs = torch.outer(t, freqs).float()
@@ -37,9 +37,12 @@ def precompute_freqs_cis(dim: int,end: int, theta: float = 10000.0):
     freqs_cos = torch.cos(freqs)
     # 计算频率的正弦值，得到虚部
     freqs_sin = torch.sin(freqs)
+
+    # freqs_cos, freqs_sin都是[end, dim // 2]
     return freqs_cos, freqs_sin 
 
 # 用于调整张量形状，使之与x的维度对齐
+# x是词向量经过 Q、K 变换后，强制改造成复数结构，两两一组，维度[Batch_Size, Seq_Len, n_heads, head_dim // 2]
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     # 获取x的维度
     ndim = x.ndim
@@ -63,14 +66,17 @@ def apply_rotary_emb(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     
     # 查询和键张量转化为浮点数，并重塑形状分离实部和虚部
-    # xq为(batch_size, seq_len, N_heads, dim)
+    # xq为(batch_size, seq_len, N_heads, dim)已经经过了wk，wq矩阵的变换
     # xq.shape[:-1]为(batch_size, seq_len, N_heads)
     # + (-1, 2)则意味着重塑为(batch_size, seq_len, N_heads，-1，2)意味着将dim分为dim//2 * 2
     # 即(batch_size, seq_len, N_heads，dim//2，2)
+    # 把dim维度上的元素分为 两个一组 
     ''' 
     .unbind(-1): 在最后一个维度 (大小为 2) 上解包得到：
         xq_r: 包含每个二维子向量的第一个元素(视为实部)
         xq_i: 包含每个二维子向量的第二个元素(视为虚部)'''
+    # xq_r，xk_r拿走每组的第一个数 
+    # xq_i，xk_i拿走每组的第二个数 
     xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
     xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
 
@@ -83,8 +89,10 @@ def apply_rotary_emb(
     # 应用旋转，得到旋转后的实部和虚部
     #  a+bi = (acosθ - bsinθ) + (asinθ + bcosθ)i
     # xq_out_r维度为(batch_size, seq_len, N_heads，dim//2)
+    # xq_r 每组的第一个数 ，xq_i 每组的第二个数
     xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
     xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
+
     xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
     xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
 
@@ -185,7 +193,7 @@ class Attention(nn.Module):
             output = torch.nn.functional.scaled_dot_product_attention(xq, xk, xv,
                 attn_mask=None, # 注意力掩码,通常将其设置为None,如果需要应用非因果或自定义Mask才设置为True
                 # 训练时,使用 self.dropout 设定的概率;推理时,使用 0.0,即关闭Dropout
-                # 该参数控制在 Softmax 之后、与 $V$ 相乘之前，应用于注意力得分矩阵的 Dropout 概率。
+                # 该参数控制在 Softmax 之后、与 V 相乘之前，应用于注意力得分矩阵的 Dropout 概率。
                 dropout_p=self.dropout if self.training else 0.0, 
                 is_causal=True,
             )

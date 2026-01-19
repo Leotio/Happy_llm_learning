@@ -141,6 +141,7 @@ class Transformer(nn.Module):
                 作用： 如果序列中的某个词元(Padding 词元）被分配了 ID -1
                 那么模型对该位置的预测误差将不会计入最终的损失值中,确保了填充部分不会影响模型的训练。
             '''
+            # 这里进行flatten主要是因为交叉熵函数 F.cross_entropy不接受三维张量
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         
         # 推理阶段，只需要logits，无需计算loss
