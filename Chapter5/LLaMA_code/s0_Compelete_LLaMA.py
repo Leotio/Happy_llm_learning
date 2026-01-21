@@ -32,6 +32,7 @@ class Transformer(PreTrainedModel):
 
         # 词嵌入层
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
+
         # dropout层
         self.dropout = nn.Dropout(args.dropout)
 
@@ -63,6 +64,7 @@ class Transformer(PreTrainedModel):
         # 将指定的函数 fn 应用于每一个子模块
         self.apply(self._init_weights)
 
+
         # 残差的投影进行特殊的缩放初始化
         '''
         named_parameters(): PyTorch 模块的方法,递归地遍历当前模块及其所有子模块中所有可训练的参数
@@ -74,28 +76,36 @@ class Transformer(PreTrainedModel):
             if pn.endswith('w2.weight') or pn.endswith('wo.weight'):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * args.n_layers))
 
-        # 初始化最后一次前向传播的损失属性
+
         '''下面三行代码是Hugging Face PreTrainedModel 子类的 __init__ 构造函数末尾，
         以及 forward 函数开始之前常见的设置。它主要是为了兼容 Hugging Face 框架的输入/输出标准。'''
+
+        # 初始化一个变量来存放最后一次计算的损失值（Loss）
         self.last_loss = None
+
         # 准备一个标准的数据结构，用于封装模型在 forward 函数中的输出
         # 目的：在 Hugging Face的LLM 中，forward函数通常返回一个包含多个字段（如 loss, logits, past_key_values, hidden_states 等）的对象
         # CausalLMOutputWithPast是一种标准的输出格式，用于因果语言模型并支持键值缓存（KV Cache，即WithPast）
         self.OUT = CausalLMOutputWithPast()
+
         # 模块切分限制
-        # 此处将所有模块的名称都放入这个列表，意味着禁止任何子模块被内部切分
+        # 把模型里所有的模块名字都填进“禁止拆分名单”，意味着禁止任何子模块被内部切分
         self._no_split_modules = [name for name, _ in self.named_modules]
+
 
     # 初始化权重
     def _init_weights(self, module):
         # 线性层权重初始化
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+            # 在模型开始学习前，我们希望“偏置”不要干扰权重的信号。让权重去决定方向，偏置项等训练开始后再慢慢调整
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
+
         # 嵌入层权重初始化
         elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module, mean=0.0, std=0.02)
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         
     
     def forward(self,tokens: torch.Tensor, targets: Optional[torch.Tensor] = None, **keyargs) -> torch.Tensor:
@@ -131,22 +141,24 @@ class Transformer(PreTrainedModel):
         h = self.norm(h)
 
         # 当 targets 不为 None 时，模型处于 训练模式 或 评估模式，需要计算损失
+        # target就是一个参考答案 ，和 tokens（输入）长得一模一样，都是一堆单词的 ID
         if targets is not None:
             # output：最后输出的线性层
             # logits为原始的对数几率，形状为(bsz, seqlen, vocab_size)
             logits = self.output(h)
+            
+            '''
+            cross_entropy Logits要求输入的向量形状为:Logits:(N, C) N是样本总数,C是词汇表大小
+                                                  Targets:(N)   N是样本总数,包含每个样本的正确类别索引Token ID
+            '''
             self.last_loss = F.cross_entropy(
-                '''
-                cross_entropyLogits要求输入的向量形状为:
-                  Logits:(N, C)N是样本总数,C是类别数(词汇表大小)
-                  Targets:(N),N是样本总数,包含每个样本的正确类别索引Token ID
-                '''
                 # 将logits从 (bsz, seqlen, vocab_size)展为(bsz * seqlen, vocab_size)
                 logits.view(-1, logits.size(-1)), 
                 targets.view(-1), # 目标标签张量（bsz,seqlen）展平为(bsz * seqlen)
                 ignore_index=0, # 忽略标签值等于 0 的位置
-                reduction='none', # 损失函数返回每个 Token 位置的单独损失值，而不是求平均
+                reduction='none',# 损失函数返回每个 Token 位置的单独损失值，而不是求平均
             )
+
         # 模型处于 推理模式 或 文本生成模式，不需要计算完整序列的损失。
         # 自回归文本生成中，只关心序列的最后一个 Token 的预测结果，因为这是下一个 Token 的概率分布。
         # 计算所有历史 Token 的 Logits 是浪费计算资源的
@@ -159,7 +171,7 @@ class Transformer(PreTrainedModel):
 
         # 设置输出
         # __setitem__ 是 Python 字典或类似容器对象上的特殊方法
-        # 等价于使用方括号进行赋值，即 self.OUT['logits'] = logit
+        # 等价于使用方括号进行赋值，和 self.OUT['logits'] = logit 其实是等价的
         self.OUT.__setitem__('logits', logits)
         self.OUT.__setitem__('last_loss', self.last_loss)
         return self.OUT
@@ -180,10 +192,11 @@ class Transformer(PreTrainedModel):
             idx_cond = idx if idx.size[1] < self.args.max_seq_len else idx[:, -self.args.max_seq_len:]
 
             # 前向传播获取序列中的最后一个位置的logits
-            # self(idx_cond) 相当于 self.forward(idx_cond))，
-            # 而且要用self(idx_cond) 才行，这样子才能去调用魔法方法，执行一些必要的操作
-            # Logits 形状为 （bz,seqlen,vocab）
-            logits = self(idx_cond).logits
+            # self(idx_cond) 相当于 self.forward(idx_cond))，返回的是OUT
+            # OUT里面有'logits'和'last_loss'所以要.logits 
+       
+            # Logits 形状为 （bz,seqlen,vocab）实际上这里的seqlen就是1，因为这个地方是推理模式，只取下一个token的logit
+            logits = self(idx_cond).logits # 必须用self(idx_cond) 才行，这样子才能去调用魔法方法，执行一些必要的操作
 
             # 提取最后一个 Token 的 Logits 
             # PyTorch 中使用 整数索引（而不是切片 : 或 [a:b]）时，该维度会被自动压缩掉

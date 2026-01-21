@@ -182,6 +182,7 @@ class Attention(nn.Module):
         xv = repeat_kv(xv, self.n_rep)
 
         # 将头作为超级批次处理
+        # 这个地方一定是B*S作为批次，否则从逻辑上这个GQA就失去意义了，要把H看作是他们的区别点才行
         # (B,S,H,d_h)->(B,H,S,d_h)
         xq = xq.transpose(1,2)
         xk = xk.transpose(1,2)
