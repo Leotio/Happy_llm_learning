@@ -210,12 +210,13 @@ class Transformer(PreTrainedModel):
             
             else:
                 # 温度缩放：
-                # 温度低 (接近0时)：分布变得“尖锐”，高分数的概率被放大，结果趋于确定性（类似贪婪）
-                # 温度高 (>1)：分布变得“平坦”，低分数 Token 被选中的概率增加，结果更具随机性
+                # T大（如2.0）：所有Logits被除以大数后，差距变小，分值高的词和分值中等的词变得差不多，Softmax概率分布平坦，随机性变强
+                # T小（如0.1）：所有Logits被除以一个很小的数，原差距被放大。高分词会占据几乎 100% 的概率,模型变保守
                 logits = logits / temperature
                 if top_k is not None:
                     # 找出 Logits 最高的 k 个值
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+
                     # v[:, [-1]]也就是最后一列，即第K大的logits值
                     # 将所有不在 Top-K 范围内的Logits值设置为极小的负数
                     # 确保后续的 Softmax 概率只在Top-K 的Token 上分配
@@ -225,7 +226,7 @@ class Transformer(PreTrainedModel):
                 # 将经过 Top-K 过滤的 Logits转化为概率分布
                 probs = F.softmax(logits, dim=-1)
 
-                # 根据概率分布 probs，随机抽取num_samples个样本
+                # 根据概率分布 probs，随机抽取num_samples个样本，返回样本下标！
                 # idx_next 是一个张量，包含下一个被选中的 Token 的 ID
                 idx_next = torch.multinomial(probs, num_samples=1)
             
