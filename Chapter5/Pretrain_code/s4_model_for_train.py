@@ -1,3 +1,9 @@
+''' 
+搭建一个用于训练的模型：
+    使⽤的模型是⼀个和LLama2结构⼀样的 Decoder only 
+    Transformer模型，使⽤Pytorch实现
+'''
+
 import math
 import inspect
 from dataclasses import dataclass

@@ -1,4 +1,4 @@
-'''准备用于Pretrain和SFT的数据，将文本数据转化为模型能够理解的Token'''
+'''此代码完成数据预处理，准备用于Pretrain和SFT的数据，将文本数据转化为模型能够理解的Token'''
 
 
 import json
@@ -101,15 +101,19 @@ class SFTDataset(Dataset):
     # 为多轮对话模型的训练数据生成损失掩码 (loss_mask),只在模型应该生成回复的位置计算损失，忽略用户的指令
     def generate_loss_mask(self, input_ids):
         mask = [0] * len(input_ids)
-        # a_sequence是Assistant回复的起始标志， Token ID 序列代表字符串：<|im\_start|>assistant\n
-        # a_sequence = [3, 1074, 537, 500, 203]
-        a_sequence = self.tokenizer("<|im_start|>assistant\n")['input_ids']  # <|im_start|>assistant\n
-        a_length = len(a_sequence)
-        n = len(input_ids)
-        i = 0
 
-        # 确定 i 开始的连续 a_length 个 Token ID，是否与预定义 a_sequence 完全一致
-        while i <= n-a_length:
+        # a_sequence去获取Assistant回复的起始标志 <|im\_start|>assistant\n 对应的Token ID 序列
+        a_sequence = self.tokenizer("<|im_start|>assistant\n")['input_ids'] 
+        a_length = len(a_sequence)
+
+        # 完整输入的id的长度
+        n = len(input_ids)
+        
+
+        # 从 i 开始的连续 a_length 个 Token ID，是否与预定义 a_sequence 完全一致
+        # 要完全一致才是正确的assistance的回答开始
+        i = 0
+        while i <= n-a_length: # 用while循环！！！支持多轮对话！！！！
             match = True
             for k in range(a_length):
                 if input_ids[i+k] != a_sequence[k]:
@@ -136,18 +140,20 @@ class SFTDataset(Dataset):
                                 mask[pos] = 1
                 # 更新 i 值，继续while循环        
                 i += a_length
-            
             else:
                 i += 1
         return mask
     
+
     def __getitem__(self, index: int):
         with open(self.data_path, 'rb') as f:
             f.seek(self._offsets[index])
             line = f.readline().decode('utf-8')
         sample = json.loads(line)
 
-        # 将一个包含角色（如Assistant）和内容的对话列表，转换为单一的、符合模型训练要求的文本字符串
+        # 将一个包含角色和内容的对话列表，按照chat_template转换为单一的、符合模型训练要求的文本字符串
+        # 比如 <|im_start|>user\n你好<|im_end|>\n<|im_start|>assistant\n你好！我是AI。<|im_end|>\n 
+        # tokenize=False 表示只返回字符串，先不转 ID
         text = self.tokenizer.apply_chat_template(sample, tokenize=False, add_generation_prompt=False)
 
         # 用tokenizer将text转换为ID序列，然后提取生成的 'input_ids' 列表，并将序列截断到最大长度
@@ -162,6 +168,8 @@ class SFTDataset(Dataset):
         # 生成损失掩码
         loss_mask = self.generate_loss_mask(input_id)
 
+
+        # SFT 没有改变这个原理，还是预测下一个词，只是mask不太一样，只需对 Assistant 的话负责，user的话都不算loss
         input_id = np.array(input_id)
         X = np.array(input_id[:-1]).astype(np.int64)
         Y = np.array(input_id[1:]).astype(np.int64)

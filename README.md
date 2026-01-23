@@ -4,8 +4,3 @@ LLaMA_code中实现了LLaMA2大模型的搭建
 Tokenizer
 
 Chapter5\Pretrain_code\tokenizer_k  ------训练好的tokenizer文件
-
-```
-Happy_llm_learning
-
-```
